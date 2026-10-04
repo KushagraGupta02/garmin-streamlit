@@ -1,7 +1,6 @@
 # Roadmap
 
 ## Next up
-- [ ] Heat & altitude adjustment: flag efficiency drops on hot days (activity `minTemperature`/`maxTemperature`) so the coach doesn't blame fitness
 - [ ] Taper planner: pick a race date, show the projected CTL/TSB curve and a 2-week taper that lands TSB at +10 to +20
 - [ ] Sleep-debt meter: rolling 14-day deficit vs a personal sleep need (median sleep on high-readiness days)
 - [ ] Illness early warning: combine RHR +5, HRV -1 SD, respiration up and skin temp (if present) into one alert
@@ -15,6 +14,7 @@
 - [ ] Women's health: cycle-phase overlay on HRV/RHR when menstrual data is present (opt-in, needs-data)
 
 ## Done
+- [x] Heat & altitude adjustment: flag efficiency drops on hot days (activity `minTemperature`/`maxTemperature`) so the coach doesn't blame fitness
 - [x] Login with MFA, remember-me tokens, demo mode, logout + cache wipe
 - [x] Dashboard, coach (do/avoid/watch + 7-day plan), load & form (CTL/ATL/TSB, ACWR, monotony, strain, 10% rule)
 - [x] Intensity (zones, 80/20, distribution type), performance (VO2max, efficiency factor, pace@HR, cadence, best efforts, race predictions)
