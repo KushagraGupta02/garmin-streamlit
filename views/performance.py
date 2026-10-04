@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -38,15 +39,54 @@ with c2:
     st.subheader("Aerobic efficiency (runs)")
     ef = an.efficiency_factor(acts)
     if len(ef):
+        sea, alt = ef[~ef["altitude"]], ef[ef["altitude"]]
+        hover = "%{customdata[0]}<br>%{customdata[1]:.1f} km @ %{customdata[2]:.0f} bpm, %{customdata[3]:.0f} C<br>EF %{y:.2f}<extra></extra>"
         fig = go.Figure()
-        fig.add_scatter(x=ef["date"], y=ef["ef"], mode="markers", name="session", marker={"size": 7, "color": SERIES[0], "opacity": 0.45},
-                        customdata=ef[["name", "km", "avg_hr"]], hovertemplate="%{customdata[0]}<br>%{customdata[1]:.1f} km @ %{customdata[2]:.0f} bpm<br>EF %{y:.2f}<extra></extra>")
-        fig.add_scatter(x=ef["date"], y=ef["ef_trend"], name="6-week median", line_color=SERIES[1])
+        fig.add_scatter(x=sea["date"], y=sea["ef"], mode="markers", name="session", marker={"size": 7, "color": SERIES[0], "opacity": 0.4},
+                        customdata=sea[["name", "km", "avg_hr", "temp_c"]], hovertemplate=hover)
+        if len(alt):
+            fig.add_scatter(x=alt["date"], y=alt["ef"], mode="markers", name=f"altitude > {an.ALTITUDE_M:.0f} m",
+                            marker={"size": 9, "symbol": "triangle-up", "color": SERIES[0], "line": {"width": 1, "color": "white"}},
+                            customdata=alt[["name", "km", "avg_hr", "temp_c"]], hovertemplate=hover)
+        fig.add_scatter(x=ef["date"], y=ef["ef_trend"], name="6-week median", line_color=SERIES[1], connectgaps=True)
+        if ef.attrs.get("heat_pct_per_c", 0) > 0:
+            fig.add_scatter(x=ef["date"], y=ef["ef_adj_trend"], name="heat-adjusted", line_color=SERIES[2], connectgaps=True)
         fig.update_yaxes(title="m/min per bpm")
         plot(fig, height=300)
-        st.caption("Speed per heartbeat on easy and steady runs (hard sessions excluded). Up = fitter.")
+        st.caption("Speed per heartbeat on easy and steady runs (hard sessions excluded). Up = fitter. "
+                   "The heat-adjusted line removes your personal heat penalty; altitude runs are left out of both trends.")
     else:
         st.caption("Needs runs with heart rate.")
+
+# --- heat ---------------------------------------------------------------------------
+pct = ef.attrs.get("heat_pct_per_c", 0.0) if len(ef) else 0.0
+hot = ef.dropna(subset=["temp_c"]) if len(ef) else ef
+if len(hot) >= 15:
+    st.subheader("Heat")
+    c1, c2 = st.columns([3, 2], gap="large")
+    with c1:
+        sea = hot[~hot["altitude"]]
+        fig = go.Figure()
+        fig.add_scatter(x=sea["temp_c"], y=sea["ef"], mode="markers", name="session",
+                        marker={"size": 7, "color": SERIES[0], "opacity": 0.45, "line": {"width": 1, "color": "white"}},
+                        customdata=sea["date"].dt.strftime("%d %b %Y"), hovertemplate="%{customdata}: %{x:.0f} C, EF %{y:.2f}<extra></extra>")
+        if pct > 0:
+            t = np.linspace(sea["temp_c"].min(), sea["temp_c"].max(), 50)
+            base = sea.loc[sea["temp_c"] <= an.HEAT_REF_C, "ef"].median()
+            fig.add_scatter(x=t, y=base * (1 - pct / 100 * np.maximum(0, t - an.HEAT_REF_C)), name="your heat curve", line_color=SERIES[1])
+        fig.add_vline(x=an.HEAT_REF_C, line_dash="dot", line_color="gray")
+        fig.update_xaxes(title="temperature on the watch (C)")
+        fig.update_layout(title="Efficiency vs temperature (C, watch sensor)")
+        plot(fig, height=300)
+    with c2:
+        if pct > 0:
+            st.metric("Your heat cost", f"{pct:.1f}% per C", help=f"Efficiency lost per degree above {an.HEAT_REF_C:.0f} C on the watch sensor")
+            p20 = an.fmt_pace(sea["pace_min_km"].median() / (1 - pct / 100 * 10))
+            st.write(f"At {an.HEAT_REF_C + 10:.0f} C expect about **{pct * 10:.0f}% slower** at the same heart rate "
+                     f"(a {an.fmt_pace(sea['pace_min_km'].median())} easy run becomes ~{p20}).")
+        else:
+            st.caption("No clear heat effect in your data yet (needs runs across a wider temperature range).")
+        st.caption("Watch sensors read several degrees above air temperature because of body heat, so use this as a relative scale.")
 
 # --- pace -----------------------------------------------------------------------
 runs = acts[(acts["sport"] == "Run") & (acts["pace_min_km"].between(2.5, 12))]
