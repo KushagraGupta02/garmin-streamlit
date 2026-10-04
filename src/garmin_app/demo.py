@@ -89,6 +89,15 @@ class DemoSource:
             "walking": 1.4,
             "strength_training": 0.0,
         }[kind] * rng.uniform(0.95, 1.05)
+        # Weather and terrain: wrist sensors read a few degrees above air temperature.
+        indoor = kind in ("indoor_cycling", "strength_training")
+        air = 20.0 if indoor else 11 + 11 * math.sin(2 * math.pi * (d.timetuple().tm_yday - 110) / 365) + rng.normal(0, 4)
+        at_altitude = not indoor and rng.random() < 0.04
+        base_elev = rng.uniform(1700, 2400) if at_altitude else rng.uniform(40, 220)
+        if kind == "running":
+            speed *= 1 - 0.008 * max(0.0, air - 12)  # ~0.8% slower per degree above 12 C
+            if at_altitude:
+                speed *= 0.95
         dist = speed * dur
         # time in zones: shift weight to higher zones with intensity
         w = np.array([max(0.05, 1 - 2 * inten), 1.2 - inten, 0.3 + inten / 2, 1.2 * inten**2, 0.8 * inten**3])
@@ -123,7 +132,11 @@ class DemoSource:
             "activityTrainingLoad": round(trimp * 1.1, 1),
             "averageRunningCadenceInStepsPerMinute": round(166 + 12 * inten + rng.normal(0, 2)) if "running" in kind else None,
             "avgPower": round(150 + 120 * inten) if "cycling" in kind else None,
-            "locationName": "Demo City",
+            "locationName": "Demo Alps" if at_altitude else "Demo City",
+            "minTemperature": round(air + 1, 1),
+            "maxTemperature": round(air + 7, 1),
+            "minElevation": round(base_elev, 1),
+            "maxElevation": round(base_elev + (dist / 1000 * rng.uniform(3, 15) if dist else 0), 1),
         }
         for z in range(5):
             act[f"hrTimeInZone_{z + 1}"] = round(float(w[z]), 1)

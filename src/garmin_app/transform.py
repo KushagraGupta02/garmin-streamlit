@@ -13,7 +13,7 @@ ACTIVITY_COLUMNS = [
     "weekday", "hour", "km", "hours", "moving_hours", "elev_m", "speed_kmh",
     "pace_min_km", "avg_hr", "max_hr", "calories", "te_aerobic", "te_anaerobic",
     "load", "vo2max", "cadence", "avg_power", "z1", "z2", "z3", "z4", "z5",
-    "location",
+    "location", "temp_c", "alt_m",
 ]  # fmt: skip
 
 
@@ -74,6 +74,11 @@ def activities_df(raw: list[dict], hr_rest: float = 55, hr_max: float = 190) -> 
                 "avg_power": _num(a.get("avgPower")),
                 **{f"z{i}": _num(a.get(f"hrTimeInZone_{i}")) / 3600 for i in range(1, 6)},
                 "location": a.get("locationName") or "",
+                # device-sensor temperature (reads warm on the wrist) and highest point
+                "temp_c": np.nanmean([_num(a.get("minTemperature")), _num(a.get("maxTemperature"))])
+                if a.get("minTemperature") is not None or a.get("maxTemperature") is not None
+                else np.nan,
+                "alt_m": _num(a.get("maxElevation")),
             }
         )
     if not rows:
