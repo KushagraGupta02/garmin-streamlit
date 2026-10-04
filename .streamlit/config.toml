@@ -1,0 +1,15 @@
+[browser]
+gatherUsageStats = false
+
+[server]
+headless = true
+address = "127.0.0.1"   # local only; see README before exposing it
+enableXsrfProtection = true
+maxUploadSize = 5
+
+[client]
+toolbarMode = "minimal"
+showErrorDetails = "type"
+
+[theme]
+primaryColor = "#2a78d6"

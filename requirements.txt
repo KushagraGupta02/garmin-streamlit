@@ -1,0 +1,6 @@
+garminconnect>=0.3.17
+numpy>=2.2
+openpyxl>=3.1
+pandas>=2.2
+plotly>=6.0
+streamlit>=1.50

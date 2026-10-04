@@ -1,0 +1,29 @@
+[project]
+name = "garmin-streamlit"
+version = "0.1.0"
+description = "Self-hosted training insights for your own Garmin Connect data"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "garminconnect>=0.3.17",
+    "numpy>=2.2",
+    "openpyxl>=3.1",
+    "pandas>=2.2",
+    "plotly>=6.0",
+    "streamlit>=1.50",
+]
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.12"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 140
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["E501", "RUF001", "RUF002", "RUF003"]
