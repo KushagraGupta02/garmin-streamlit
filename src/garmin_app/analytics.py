@@ -107,18 +107,59 @@ def classify_distribution(split: dict[str, float]) -> str:
 
 
 # --- performance ----------------------------------------------------------
+HEAT_REF_C = 15.0  # device temperature where heat starts to cost efficiency
+ALTITUDE_M = 1500.0  # above this, thinner air lowers pace at the same HR
+
+
+def heat_penalty(d: pd.DataFrame) -> float:
+    """Personal efficiency loss in % per degree C above HEAT_REF_C.
+
+    Fits log(EF) on heat and time (so fitness trends aren't mistaken for heat)
+    over sea-level sessions. Returns 0 when the data can't support an estimate.
+    """
+    s = d.dropna(subset=["temp_c"])
+    s = s[~s["altitude"]]
+    if len(s) < 15 or s["temp_c"].max() - s["temp_c"].min() < 8:
+        return 0.0
+    heat = np.maximum(0.0, s["temp_c"].to_numpy() - HEAT_REF_C)
+    if (heat > 0).sum() < 5:
+        return 0.0
+    days = (s["date"] - s["date"].min()).dt.days.to_numpy() / 365
+    X = np.column_stack([np.ones(len(s)), heat, days])
+    coef, *_ = np.linalg.lstsq(X, np.log(s["ef"].to_numpy()), rcond=None)
+    return float(np.clip(-coef[1] * 100, 0.0, 3.0))
+
+
 def efficiency_factor(acts: pd.DataFrame, sport: str = "Run") -> pd.DataFrame:
-    """Speed (m/min) per heartbeat for steady sessions. Rising = getting fitter."""
+    """Speed (m/min) per heartbeat for steady sessions. Rising = getting fitter.
+
+    ef_adj removes your personal heat penalty; trends skip altitude sessions.
+    The fitted penalty is in .attrs["heat_pct_per_c"].
+    """
+    cols = ["date", "ef", "ef_trend", "ef_adj", "ef_adj_trend", "temp_c", "alt_m", "altitude", "name", "km", "pace_min_km", "avg_hr"]
     d = acts[(acts["sport"] == sport) & acts["avg_hr"].notna() & (acts["speed_kmh"] > 0)].copy()
     d = d[d["hours"] >= 0.33]
     if d.empty:
-        return pd.DataFrame(columns=["date", "ef", "ef_trend"])
+        out = pd.DataFrame(columns=cols)
+        out.attrs["heat_pct_per_c"] = 0.0
+        return out
     # exclude obviously hard sessions so we compare like with like
     d = d[(d["z4"].fillna(0) + d["z5"].fillna(0)) < 0.35 * d["hours"]]
+    for c in ("temp_c", "alt_m"):
+        if c not in d:
+            d[c] = np.nan
     d["ef"] = d["speed_kmh"] * 1000 / 60 / d["avg_hr"]
+    d["altitude"] = d["alt_m"].fillna(0) > ALTITUDE_M
+    pct = heat_penalty(d)
+    heat = np.maximum(0.0, d["temp_c"].fillna(HEAT_REF_C) - HEAT_REF_C)
+    d["ef_adj"] = d["ef"] * (1 + pct / 100 * heat)
     d = d.set_index("date").sort_index()
-    d["ef_trend"] = d["ef"].rolling("42D", min_periods=3).median()
-    return d.reset_index()[["date", "ef", "ef_trend", "name", "km", "pace_min_km", "avg_hr"]]
+    sea = d[~d["altitude"]]
+    d["ef_trend"] = sea["ef"].rolling("42D", min_periods=3).median()
+    d["ef_adj_trend"] = sea["ef_adj"].rolling("42D", min_periods=3).median()
+    out = d.reset_index()[cols]
+    out.attrs["heat_pct_per_c"] = pct
+    return out
 
 
 def best_efforts(acts: pd.DataFrame) -> pd.DataFrame:

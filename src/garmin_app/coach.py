@@ -192,19 +192,32 @@ def advise(acts: pd.DataFrame, rec: pd.DataFrame, ff: pd.DataFrame) -> list[Advi
             out.append(Advice("do", "info", "Move more outside workouts",
                               f"Average {steps:.0f} steps/day. Low daily movement hurts recovery and metabolic health even if you train.", "NEAT"))
 
-    # 7. performance trend
+    # 7. performance trend, corrected for heat and altitude
     ef = an.efficiency_factor(acts)
     if len(ef) >= 10:
-        recent = ef[ef["date"] > today - pd.Timedelta(days=42)]["ef"].median()
-        before = ef[(ef["date"] <= today - pd.Timedelta(days=42)) & (ef["date"] > today - pd.Timedelta(days=126))]["ef"].median()
-        if not np.isnan(recent) and not np.isnan(before) and before > 0:
-            ch = 100 * (recent / before - 1)
-            if ch > 2:
+        sea = ef[~ef["altitude"].astype(bool)]
+        new = sea[sea["date"] > today - pd.Timedelta(days=42)]
+        old = sea[(sea["date"] <= today - pd.Timedelta(days=42)) & (sea["date"] > today - pd.Timedelta(days=126))]
+        if len(new) >= 3 and len(old) >= 3:
+            ch = 100 * (new["ef"].median() / old["ef"].median() - 1)
+            ch_adj = 100 * (new["ef_adj"].median() / old["ef_adj"].median() - 1)
+            warmer = new["temp_c"].median() - old["temp_c"].median()
+            pct = ef.attrs.get("heat_pct_per_c", 0.0)
+            if ch < -3 and ch_adj >= -1.5 and pct > 0 and warmer >= 3:
+                out.append(Advice("watch", "info", "Efficiency dip is heat, not fitness",
+                                  f"Raw efficiency is down {abs(ch):.1f}%, but runs were {warmer:.0f} C warmer and you lose ~{pct:.1f}% per degree. "
+                                  f"Heat-adjusted it's {ch_adj:+.1f}%. Run by heart rate on hot days, not pace, and drink more.", "Heat"))
+            elif ch_adj > 2:
                 out.append(Advice("do", "good", "Aerobic efficiency is improving",
-                                  f"Easy runs are {ch:.1f}% faster per heartbeat than the previous 12 weeks. Whatever you're doing is working.", "Efficiency"))
-            elif ch < -3:
+                                  f"Easy runs are {ch_adj:.1f}% faster per heartbeat (heat-adjusted) than the previous 12 weeks. Whatever you're doing is working.", "Efficiency"))
+            elif ch_adj < -3:
                 out.append(Advice("watch", "warning", "Aerobic efficiency is dropping",
-                                  f"Easy runs are {abs(ch):.1f}% slower per heartbeat (check heat, fatigue, illness or too little easy volume).", "Efficiency"))
+                                  f"Easy runs are {abs(ch_adj):.1f}% slower per heartbeat even after adjusting for heat (check fatigue, illness or too little easy volume).", "Efficiency"))
+        alt = ef[ef["altitude"].astype(bool) & (ef["date"] > today - pd.Timedelta(days=14))]
+        if len(alt):
+            out.append(Advice("watch", "info", "Altitude sessions in the last 2 weeks",
+                              f"{len(alt)} run(s) above {an.ALTITUDE_M:.0f} m (up to {alt['alt_m'].max():.0f} m). Expect slower pace at the same HR for 1-2 weeks; "
+                              "they're left out of your efficiency trend.", "Altitude"))
 
     order = {"critical": 0, "serious": 1, "warning": 2, "good": 3, "info": 4}
     return sorted(out, key=lambda a: order[a.status])

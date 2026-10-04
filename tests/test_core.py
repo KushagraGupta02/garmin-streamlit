@@ -111,3 +111,43 @@ def test_cache_roundtrip(tmp_path):
 def test_user_key_hides_email():
     k = user_key("Someone@Example.com ")
     assert k == user_key("someone@example.com") and "@" not in k and len(k) == 16
+
+
+def _runs(n=60, heat_pct=1.0, hot_recent=True, alt_last=False):
+    """Easy runs with constant fitness; only temperature changes efficiency."""
+    today = pd.Timestamp.today().normalize()
+    dates = [today - pd.Timedelta(days=2 * i) for i in range(n)][::-1]
+    rng = np.random.default_rng(0)
+    temps = np.array([28.0 if (hot_recent and d > today - pd.Timedelta(days=42)) else rng.uniform(0, 20) for d in dates])
+    temps[: n // 3] = rng.uniform(5, 30, n // 3)  # spread so the penalty is identifiable
+    speed = 10.0 * (1 - heat_pct / 100 * np.maximum(0, temps - an.HEAT_REF_C)) * rng.uniform(0.99, 1.01, n)
+    df = pd.DataFrame({
+        "id": range(n), "date": dates, "sport": "Run", "name": "Easy", "hours": 0.75, "km": speed * 0.75,
+        "speed_kmh": speed, "pace_min_km": 60 / speed, "avg_hr": 140.0, "load": 50.0,
+        "z1": 0.3, "z2": 0.45, "z3": 0.0, "z4": 0.0, "z5": 0.0, "temp_c": temps, "alt_m": 100.0,
+    })
+    if alt_last:
+        df.loc[df.index[-1], "alt_m"] = 2200.0
+    return df
+
+
+def test_heat_penalty_is_recovered():
+    ef = an.efficiency_factor(_runs(heat_pct=1.0))
+    assert ef.attrs["heat_pct_per_c"] == pytest.approx(1.0, abs=0.25)
+    hot = ef[ef["temp_c"] > 25]
+    # adjustment brings hot runs back to the cool-run level
+    assert hot["ef_adj"].median() == pytest.approx(ef[ef["temp_c"] <= an.HEAT_REF_C]["ef"].median(), rel=0.03)
+
+
+def test_coach_blames_heat_not_fitness():
+    acts = _runs(heat_pct=1.0)
+    rules = {a.rule for a in coach.advise(acts, pd.DataFrame(), an.fitness_fatigue(an.daily_load(acts)))}
+    assert "Heat" in rules and "Efficiency" not in rules
+
+
+def test_altitude_runs_flagged_and_excluded():
+    acts = _runs(hot_recent=False, alt_last=True)
+    ef = an.efficiency_factor(acts)
+    assert ef["altitude"].sum() == 1 and np.isnan(ef.loc[ef["altitude"], "ef_trend"]).all()
+    rules = {a.rule for a in coach.advise(acts, pd.DataFrame(), an.fitness_fatigue(an.daily_load(acts)))}
+    assert "Altitude" in rules
